@@ -23,7 +23,7 @@ class ReportsController < ApplicationController
     @trackers = @project.trackers
     @versions = @project.shared_versions.sort
     @priorities = IssuePriority.all
-    @categories = @project.issue_categories
+    @categories = @project.shared_categories.sort
     @assignees = @project.members.collect { |m| m.user }.sort
     @authors = @project.members.collect { |m| m.user }.sort
     @subprojects = @project.descendants.visible
@@ -58,7 +58,7 @@ class ReportsController < ApplicationController
       @report_title = l(:field_priority)
     when "category"
       @field = "category_id"
-      @rows = @project.issue_categories
+      @rows = @project.shared_categories.sort
       @data = Issue.by_category(@project)
       @report_title = l(:field_category)
     when "assigned_to"

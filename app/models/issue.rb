@@ -165,6 +165,10 @@ class Issue < ActiveRecord::Base
       unless new_project.shared_versions.include?(issue.fixed_version)
         issue.fixed_version = nil
       end
+      # Keep the category if it's still valid in the new_project
+      unless new_project.shared_categories.include?(issue.category)
+        issue.category = nil
+      end
       issue.project = new_project
       if issue.parent && issue.parent.project_id != issue.project_id
         issue.parent_issue_id = nil
@@ -349,6 +353,12 @@ class Issue < ActiveRecord::Base
       end
     end
 
+    if category
+      if !assignable_categories.include?(category)
+        errors.add :category_id, :inclusion
+      end
+    end
+
     # Checks that the issue can not be added/moved to a disabled tracker
     if project && (tracker_id_changed? || project_id_changed?)
       unless project.trackers.include?(tracker)
@@ -448,6 +458,11 @@ class Issue < ActiveRecord::Base
   # Versions that the issue can be assigned to
   def assignable_versions
     @assignable_versions ||= (project.shared_versions.open + [Version.find_by_id(fixed_version_id_was)]).compact.uniq.sort
+  end
+
+  # Categories that the issue can be assigned to
+  def assignable_categories
+    @assignable_categories ||= (project.shared_categories + [IssueCategory.find_by_id(category_id_was)]).compact.uniq.sort
   end
 
   # Returns true if this issue is blocked by another issue that is still open
@@ -617,6 +632,12 @@ class Issue < ActiveRecord::Base
     update_versions(["#{Issue.table_name}.fixed_version_id = ?", version.id])
   end
 
+  # Unassigns issues from +category+ if it's no longer shared with issue's project
+  def self.update_categories_from_sharing_change(category)
+    # Update issues assigned to the category
+    update_categories(["#{Issue.table_name}.category_id = ?", category.id])
+  end
+
   # Unassigns issues from versions that are no longer shared
   # after +project+ was moved
   def self.update_versions_from_hierarchy_change(project)
@@ -681,13 +702,13 @@ class Issue < ActiveRecord::Base
   end
 
   def self.by_subproject(project)
-    ActiveRecord::Base.connection.select_all("select    s.id as status_id, 
-                                                s.is_closed as closed, 
+    ActiveRecord::Base.connection.select_all("select    s.id as status_id,
+                                                s.is_closed as closed,
                                                 #{Issue.table_name}.project_id as project_id,
-                                                count(#{Issue.table_name}.id) as total 
-                                              from 
+                                                count(#{Issue.table_name}.id) as total
+                                              from
                                                 #{Issue.table_name}, #{Project.table_name}, #{IssueStatus.table_name} s
-                                              where 
+                                              where
                                                 #{Issue.table_name}.status_id=s.id
                                                 and #{Issue.table_name}.project_id = #{Project.table_name}.id
                                                 and #{visible_condition(User.current, :project => project, :with_subprojects => true)}
@@ -822,6 +843,26 @@ class Issue < ActiveRecord::Base
     end
   end
 
+  # Update issues so their categories are not pointing to a
+  # fixed_version that is not shared with the issue's project
+  def self.update_categories(conditions=nil)
+    # Only need to update issues with a fixed_version from
+    # a different project and that is not systemwide shared
+    Issue.all(:conditions => merge_conditions("#{Issue.table_name}.category_id IS NOT NULL" +
+                                                " AND #{Issue.table_name}.project_id <> #{IssueCategory.table_name}.project_id" +
+                                                " AND #{IssueCategory.table_name}.sharing <> 'system'",
+                                                conditions),
+              :include => [:project, :category]
+              ).each do |issue|
+      next if issue.project.nil? || issue.category.nil?
+      unless issue.project.shared_categories.include?(issue.category)
+        issue.init_journal(User.current)
+        issue.category = nil
+        issue.save
+      end
+    end
+  end
+
   # Callback on attachment deletion
   def attachment_removed(obj)
     journal = init_journal(User.current)
@@ -904,14 +945,14 @@ class Issue < ActiveRecord::Base
 
     where = "#{Issue.table_name}.#{select_field}=j.id"
 
-    ActiveRecord::Base.connection.select_all("select    s.id as status_id, 
-                                                s.is_closed as closed, 
+    ActiveRecord::Base.connection.select_all("select    s.id as status_id,
+                                                s.is_closed as closed,
                                                 j.id as #{select_field},
-                                                count(#{Issue.table_name}.id) as total 
-                                              from 
+                                                count(#{Issue.table_name}.id) as total
+                                              from
                                                   #{Issue.table_name}, #{Project.table_name}, #{IssueStatus.table_name} s, #{joins} j
-                                              where 
-                                                #{Issue.table_name}.status_id=s.id 
+                                              where
+                                                #{Issue.table_name}.status_id=s.id
                                                 and #{where}
                                                 and #{Issue.table_name}.project_id=#{Project.table_name}.id
                                                 and #{visible_condition(User.current, :project => project)}

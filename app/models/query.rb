@@ -224,9 +224,8 @@ class Query < ActiveRecord::Base
 
     if project
       # project specific filters
-      categories = @project.issue_categories.all
-      unless categories.empty?
-        @available_filters["category_id"] = { :type => :list_optional, :order => 6, :values => categories.collect{|s| [s.name, s.id.to_s] } }
+      unless @project.shared_categories.empty?
+        @available_filters["category_id"] = { :type => :list_optional, :order => 6, :values => @project.shared_categories.collect{|s| [s.name, s.id.to_s] } }
       end
       versions = @project.shared_versions.all
       unless versions.empty?
