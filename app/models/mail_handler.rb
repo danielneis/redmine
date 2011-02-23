@@ -267,7 +267,7 @@ class MailHandler < ActionMailer::Base
       'tracker_id' => (k = get_keyword(:tracker)) && issue.project.trackers.find_by_name(k).try(:id),
       'status_id' =>  (k = get_keyword(:status)) && IssueStatus.find_by_name(k).try(:id),
       'priority_id' => (k = get_keyword(:priority)) && IssuePriority.find_by_name(k).try(:id),
-      'category_id' => (k = get_keyword(:category)) && issue.project.issue_categories.find_by_name(k).try(:id),
+      'category_id' => (k = get_keyword(:category)) && issue.project.shared_categories.find_by_name(k).try(:id),
       'assigned_to_id' => assigned_to.try(:id),
       'fixed_version_id' => (k = get_keyword(:fixed_version, :override => true)) && issue.project.shared_versions.find_by_name(k).try(:id),
       'start_date' => get_keyword(:start_date, :override => true, :format => '\d{4}-\d{2}-\d{2}'),

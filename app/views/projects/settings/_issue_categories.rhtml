@@ -1,4 +1,4 @@
-<% if @project.issue_categories.any? %>
+<% if @project.shared_categories.any? %>
 <table class="list">
 	<thead><tr>
 	<th><%= l(:label_issue_category) %></th>
@@ -6,7 +6,7 @@
 	<th></th>
 	</tr></thead>
 	<tbody>
-<% for category in @project.issue_categories %>
+<% for category in @project.shared_categories.sort %>
 	<% unless category.new_record? %>
 	<tr class="<%= cycle 'odd', 'even' %>">
     <td><%=h(category.name) %></td>
