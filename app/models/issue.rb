@@ -143,6 +143,10 @@ class Issue < ActiveRecord::Base
       unless new_project.shared_versions.include?(issue.fixed_version)
         issue.fixed_version = nil
       end
+      # Keep the category if it's still valid in the new_project
+      unless new_project.shared_categories.include?(issue.category)
+        issue.category = nil
+      end
       issue.project = new_project
       if issue.parent && issue.parent.project_id != issue.project_id
         issue.parent_issue_id = nil
@@ -313,6 +317,12 @@ class Issue < ActiveRecord::Base
         errors.add_to_base I18n.t(:error_can_not_reopen_issue_on_closed_version)
       end
     end
+
+    if category
+      if !assignable_categories.include?(category)
+        errors.add :category_id, :inclusion
+      end
+    end
     
     # Checks that the issue can not be added/moved to a disabled tracker
     if project && (tracker_id_changed? || project_id_changed?)
@@ -413,6 +423,11 @@ class Issue < ActiveRecord::Base
   # Versions that the issue can be assigned to
   def assignable_versions
     @assignable_versions ||= (project.shared_versions.open + [Version.find_by_id(fixed_version_id_was)]).compact.uniq.sort
+  end
+
+  # Categories that the issue can be assigned to
+  def assignable_categories
+    @assignable_categories ||= (project.shared_categories + [IssueCategory.find_by_id(category_id_was)]).compact.uniq.sort
   end
   
   # Returns true if this issue is blocked by another issue that is still open
@@ -577,6 +592,12 @@ class Issue < ActiveRecord::Base
   def self.update_versions_from_sharing_change(version)
     # Update issues assigned to the version
     update_versions(["#{Issue.table_name}.fixed_version_id = ?", version.id])
+  end
+
+  # Unassigns issues from +category+ if it's no longer shared with issue's project
+  def self.update_categories_from_sharing_change(category)
+    # Update issues assigned to the category
+    update_categories(["#{Issue.table_name}.category_id = ?", category.id])
   end
   
   # Unassigns issues from versions that are no longer shared
@@ -777,6 +798,26 @@ class Issue < ActiveRecord::Base
       unless issue.project.shared_versions.include?(issue.fixed_version)
         issue.init_journal(User.current)
         issue.fixed_version = nil
+        issue.save
+      end
+    end
+  end
+
+  # Update issues so their categories are not pointing to a
+  # fixed_version that is not shared with the issue's project
+  def self.update_categories(conditions=nil)
+    # Only need to update issues with a fixed_version from
+    # a different project and that is not systemwide shared
+    Issue.all(:conditions => merge_conditions("#{Issue.table_name}.category_id IS NOT NULL" +
+                                                " AND #{Issue.table_name}.project_id <> #{IssueCategory.table_name}.project_id" +
+                                                " AND #{IssueCategory.table_name}.sharing <> 'system'",
+                                                conditions),
+              :include => [:project, :category]
+              ).each do |issue|
+      next if issue.project.nil? || issue.category.nil?
+      unless issue.project.shared_categories.include?(issue.category)
+        issue.init_journal(User.current)
+        issue.category = nil
         issue.save
       end
     end
